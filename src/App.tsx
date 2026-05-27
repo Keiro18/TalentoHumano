@@ -7,6 +7,8 @@ import {
   initialAudit,
   initialDocuments,
   initialEmployees,
+  initialPayrollRuns,
+  initialProviderRequests,
   navigation,
   type Affiliation,
   type AppRole,
@@ -14,6 +16,8 @@ import {
   type Employee,
   type EmployeeDocument,
   type DocumentCategory,
+  type PayrollRun,
+  type ProviderRequest,
   type Section,
 } from './data'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
@@ -45,6 +49,13 @@ function App() {
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>(() =>
     isSupabaseConfigured ? [] : initialAudit,
   )
+  const [providerRequests, setProviderRequests] = useState<ProviderRequest[]>(() =>
+    isSupabaseConfigured ? initialProviderRequests.map((item) => ({ ...item })) : initialProviderRequests,
+  )
+  const [payrollRuns, setPayrollRuns] = useState<PayrollRun[]>(() =>
+    isSupabaseConfigured ? initialPayrollRuns.map((item) => ({ ...item })) : initialPayrollRuns,
+  )
+  const [selectedPayrollRunId, setSelectedPayrollRunId] = useState<string | null>(null)
   const [role, setRole] = useState<AppRole>(() =>
     isSupabaseConfigured ? 'Empleado' : 'Recursos Humanos',
   )
@@ -138,6 +149,8 @@ function App() {
     .sort((a, b) => a.contractEnd.localeCompare(b.contractEnd))
   const activeEmployees = visibleEmployees.filter((employee) => employee.status !== 'Licencia').length
   const pendingAffiliations = visibleAffiliations.filter((item) => item.status !== 'Validado').length
+  const payrollSummary = payrollRuns[0]
+  const selectedPayrollRun = payrollRuns.find((run) => run.id === selectedPayrollRunId)
 
   function notify(message: string) {
     setToast(message)
@@ -163,6 +176,37 @@ function App() {
     } catch {
       // An audit failure does not roll back the action already performed.
     }
+  }
+
+  function cycleProviderStatus(id: string, nextStatus: ProviderRequest['status']) {
+    setProviderRequests((current) =>
+      current.map((request) => request.id === id ? { ...request, status: nextStatus, lastUpdate: 'Ahora' } : request),
+    )
+    void logAction('Flujo simulado actualizado', `La solicitud ${id} pasó a ${nextStatus}.`)
+  }
+
+  function runDemoPayroll() {
+    setPayrollRuns((current) => [
+      {
+        id: `PAY-${String(current.length + 1).padStart(3, '0')}`,
+        period: 'Quincena demo generada',
+        base: 17125000,
+        deductions: 2540000,
+        net: 14585000,
+        status: 'En proceso',
+      },
+      ...current,
+    ])
+    void logAction('Nómina simulada generada', 'Se creó una corrida interna de prueba sin impacto real.')
+    notify('Se generó una corrida de nómina interna de prueba.')
+  }
+
+  function approveDemoPayroll(id: string) {
+    setPayrollRuns((current) =>
+      current.map((run) => (run.id === id ? { ...run, status: 'Aprobado' } : run)),
+    )
+    void logAction('Nómina simulada aprobada', `La corrida ${id} cambió a aprobado.`)
+    notify('La nómina demo quedó aprobada dentro del flujo interno.')
   }
 
   async function createEmployee(event: FormEvent<HTMLFormElement>) {
@@ -322,7 +366,7 @@ function App() {
           ? (nextRole) => {
               setRole(nextRole)
               setSelectedEmployeeId(null)
-              if (nextRole === 'Empleado' && section === 'reports') {
+              if (nextRole === 'Empleado' && (section === 'reports' || section === 'simulations')) {
                 setSection('dashboard')
               }
             }
@@ -367,6 +411,17 @@ function App() {
             onValidate={isManagement ? validateAffiliation : undefined}
           />
         )}
+        {section === 'simulations' && (
+          <Simulations
+            providerRequests={providerRequests}
+            payrollRuns={payrollRuns}
+            payrollSummary={payrollSummary}
+            onCycleProviderStatus={cycleProviderStatus}
+            onRunDemoPayroll={runDemoPayroll}
+            onApproveDemoPayroll={approveDemoPayroll}
+            onOpenPayrollRun={setSelectedPayrollRunId}
+          />
+        )}
         {section === 'reports' && canSeeReports && <Reports onExport={exportEmployeesCsv} />}
       </main>
       {selectedEmployee && (
@@ -379,6 +434,13 @@ function App() {
           onApproveDocument={approveDocument}
           onViewDocument={viewDocument}
           onClose={() => setSelectedEmployeeId(null)}
+        />
+      )}
+      {selectedPayrollRun && (
+        <PayrollPanel
+          run={selectedPayrollRun}
+          onClose={() => setSelectedPayrollRunId(null)}
+          onApprove={() => approveDemoPayroll(selectedPayrollRun.id)}
         />
       )}
       {isCreateOpen && isManagement && (
@@ -481,7 +543,7 @@ function Sidebar({
   onSignOut?: () => void
 }) {
   const availableNavigation = role === 'Empleado'
-    ? navigation.filter((item) => item.id !== 'reports')
+    ? navigation.filter((item) => item.id !== 'reports' && item.id !== 'simulations')
     : navigation
 
   return (
@@ -829,6 +891,188 @@ function Reports({ onExport }: { onExport: () => void }) {
         ))}
       </div>
     </section>
+  )
+}
+
+function Simulations({
+  providerRequests,
+  payrollRuns,
+  payrollSummary,
+  onCycleProviderStatus,
+  onRunDemoPayroll,
+  onApproveDemoPayroll,
+  onOpenPayrollRun,
+}: {
+  providerRequests: ProviderRequest[]
+  payrollRuns: PayrollRun[]
+  payrollSummary?: PayrollRun
+  onCycleProviderStatus: (id: string, nextStatus: ProviderRequest['status']) => void
+  onRunDemoPayroll: () => void
+  onApproveDemoPayroll: (id: string) => void
+  onOpenPayrollRun: (id: string) => void
+}) {
+  const workflow = [
+    { title: 'Recepción interna', detail: 'Ingreso de datos y soportes ficticios.' },
+    { title: 'Validación simulada', detail: 'Estados internos para EPS, ARL, pensión y caja.' },
+    { title: 'Cierre de nómina', detail: 'Base, deducciones y neto dentro del sandbox.' },
+    { title: 'Aprobación', detail: 'Vista ejecutiva sin impacto real.' },
+  ]
+
+  return (
+    <section className="page">
+      <PageHeading
+        title="Simulaciones"
+        description="Flujos internos de prueba para entidades externas y nómina, sin conexión real"
+        right={<span className="lock-chip">Sandbox interno</span>}
+      />
+      <div className="simulation-grid">
+        <article className="surface simulation-panel">
+          <div className="surface-header">
+            <div>
+              <h2>Flujos de entidades ficticias</h2>
+              <p>EPS, ARL, pensión y caja de compensación internas</p>
+            </div>
+          </div>
+          <div className="workflow-timeline">
+            {workflow.map((step, index) => (
+              <div className="workflow-step" key={step.title}>
+                <div className="workflow-marker">{String(index + 1).padStart(2, '0')}</div>
+                <div>
+                  <strong>{step.title}</strong>
+                  <p>{step.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="provider-grid">
+            {providerRequests.map((request) => (
+              <div className="provider-card" key={request.id}>
+                <div className="provider-head">
+                  <div>
+                    <strong>{request.entity}</strong>
+                    <small>{request.provider}</small>
+                  </div>
+                  <Badge value={request.status} />
+                </div>
+                <p>{request.employeeName}</p>
+                <small>Actualizado: {request.lastUpdate}</small>
+                <div className="provider-actions">
+                  <button type="button" className="text-button" onClick={() => onCycleProviderStatus(request.id, 'Borrador')}>Borrador</button>
+                  <button type="button" className="text-button" onClick={() => onCycleProviderStatus(request.id, 'En proceso')}>Procesar</button>
+                  <button type="button" className="text-button" onClick={() => onCycleProviderStatus(request.id, 'Aprobado')}>Aprobar</button>
+                  <button type="button" className="text-button" onClick={() => onCycleProviderStatus(request.id, 'Rechazado')}>Rechazar</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+        <article className="surface simulation-panel">
+          <div className="surface-header">
+            <div>
+              <h2>Nómina demo</h2>
+              <p>Corridas ficticias con base, deducciones y neto</p>
+            </div>
+            <button type="button" className="secondary-button" onClick={onRunDemoPayroll}>Generar corrida</button>
+          </div>
+          {payrollSummary && (
+            <div className="payroll-summary">
+              <div>
+                <small>Periodo actual</small>
+                <strong>{payrollSummary.period}</strong>
+              </div>
+              <div>
+                <small>Base</small>
+                <strong>{formatCurrency(payrollSummary.base)}</strong>
+              </div>
+              <div>
+                <small>Deducciones</small>
+                <strong>{formatCurrency(payrollSummary.deductions)}</strong>
+              </div>
+              <div>
+                <small>Neto</small>
+                <strong>{formatCurrency(payrollSummary.net)}</strong>
+              </div>
+              <Badge value={payrollSummary.status} />
+            </div>
+          )}
+          <div className="payroll-list">
+            {payrollRuns.map((run) => (
+              <div className="payroll-card" key={run.id}>
+                <div>
+                  <strong>{run.period}</strong>
+                  <small>{run.id}</small>
+                </div>
+                <Badge value={run.status} />
+                <div className="payroll-actions">
+                  <button type="button" className="text-button" onClick={() => onOpenPayrollRun(run.id)}>
+                    Detalle
+                  </button>
+                  <button type="button" className="text-button" onClick={() => onApproveDemoPayroll(run.id)}>
+                    Aprobar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+      </div>
+    </section>
+  )
+}
+
+function PayrollPanel({
+  run,
+  onClose,
+  onApprove,
+}: {
+  run: PayrollRun
+  onClose: () => void
+  onApprove: () => void
+}) {
+  const steps = [
+    { label: 'Generada', done: true },
+    { label: 'Validada', done: run.status !== 'Borrador' },
+    { label: 'Aprobada', done: run.status === 'Aprobado' },
+    { label: 'Cerrada', done: run.status === 'Aprobado' },
+  ]
+
+  return (
+    <aside className="drawer" aria-label="Detalle de corrida de nómina">
+      <button className="close-button" type="button" onClick={onClose}>×</button>
+      <div className="profile-head">
+        <span className="avatar">NP</span>
+        <h2>Nómina demo</h2>
+        <p>{run.period}</p>
+        <Badge value={run.status} />
+      </div>
+      <h3>Resumen financiero</h3>
+      <Detail label="Base" value={formatCurrency(run.base)} />
+      <Detail label="Deducciones" value={formatCurrency(run.deductions)} />
+      <Detail label="Neto" value={formatCurrency(run.net)} />
+      <h3>Línea de tiempo</h3>
+      <div className="payroll-step-list">
+        {steps.map((step, index) => (
+          <div className={step.done ? 'payroll-step done' : 'payroll-step'} key={step.label}>
+            <span>{String(index + 1)}</span>
+            <div>
+              <strong>{step.label}</strong>
+              <small>{step.done ? 'Completado' : 'Pendiente'}</small>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="contract-notice">
+        <strong>Detalle interno</strong>
+        <p>
+          Esta corrida es una simulación visual. No genera pagos reales, no integra entidades
+          externas y no tiene impacto contable.
+        </p>
+      </div>
+      <div className="modal-actions">
+        <button className="secondary-button" type="button" onClick={onClose}>Cerrar</button>
+        <button className="primary-button" type="button" onClick={onApprove}>Aprobar corrida</button>
+      </div>
+    </aside>
   )
 }
 

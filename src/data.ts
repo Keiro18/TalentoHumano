@@ -1,4 +1,4 @@
-export type Section = 'dashboard' | 'employees' | 'contracts' | 'affiliations' | 'reports'
+export type Section = 'dashboard' | 'employees' | 'contracts' | 'affiliations' | 'simulations' | 'reports'
 
 export type EmployeeStatus = 'Activo' | 'En inducción' | 'Licencia'
 export type DocumentStatus = 'Completo' | 'Pendiente' | 'En revisión'
@@ -7,6 +7,7 @@ export type AffiliationStatus = 'Validado' | 'Pendiente' | 'En revisión'
 export type AppRole = 'Administrador' | 'Recursos Humanos' | 'Gerencia' | 'Empleado'
 export type DocumentCategory = 'Contrato' | 'Identificación' | 'Afiliación' | 'Certificado'
 export type EmployeeDocumentStatus = 'Validado' | 'Pendiente validación'
+export type DemoWorkflowStatus = 'Borrador' | 'En proceso' | 'Aprobado' | 'Rechazado'
 
 export interface Employee {
   id: string
@@ -50,6 +51,24 @@ export interface AuditEntry {
   createdAt: string
 }
 
+export interface ProviderRequest {
+  id: string
+  provider: string
+  entity: 'EPS' | 'ARL' | 'Pensión' | 'Caja'
+  employeeName: string
+  status: DemoWorkflowStatus
+  lastUpdate: string
+}
+
+export interface PayrollRun {
+  id: string
+  period: string
+  base: number
+  deductions: number
+  net: number
+  status: DemoWorkflowStatus
+}
+
 export interface TimelineEntry {
   title: string
   detail: string
@@ -61,6 +80,7 @@ export const navigation: Array<{ id: Section; label: string; symbol: string }> =
   { id: 'employees', label: 'Empleados', symbol: '◎' },
   { id: 'contracts', label: 'Contratos', symbol: '▤' },
   { id: 'affiliations', label: 'Afiliaciones', symbol: '✓' },
+  { id: 'simulations', label: 'Simulaciones', symbol: '↺' },
   { id: 'reports', label: 'Reportes', symbol: '◫' },
 ]
 
@@ -176,6 +196,18 @@ export const initialAudit: AuditEntry[] = [
   { id: 'AUD-001', action: 'Empleado registrado', detail: 'Mariana Torres fue vinculada al expediente digital.', createdAt: 'Hoy, 09:14' },
   { id: 'AUD-002', action: 'Documento cargado', detail: 'Certificado caja.pdf para Andrés Salazar.', createdAt: 'Ayer, 16:40' },
   { id: 'AUD-003', action: 'Alerta generada', detail: 'Contrato de Andrés Salazar próximo a vencer.', createdAt: 'Ayer, 11:25' },
+]
+
+export const initialProviderRequests: ProviderRequest[] = [
+  { id: 'REQ-001', provider: 'SimuEPS', entity: 'EPS', employeeName: 'Mariana Torres', status: 'En proceso', lastUpdate: 'Hoy, 08:42' },
+  { id: 'REQ-002', provider: 'MockARL', entity: 'ARL', employeeName: 'Andrés Salazar', status: 'Aprobado', lastUpdate: 'Hoy, 09:07' },
+  { id: 'REQ-003', provider: 'Pensión Demo', entity: 'Pensión', employeeName: 'Laura Jiménez', status: 'Borrador', lastUpdate: 'Ayer, 18:10' },
+  { id: 'REQ-004', provider: 'Caja Demo', entity: 'Caja', employeeName: 'Carlos Medina', status: 'Rechazado', lastUpdate: 'Ayer, 14:55' },
+]
+
+export const initialPayrollRuns: PayrollRun[] = [
+  { id: 'PAY-001', period: 'Primera quincena mayo 2026', base: 16450000, deductions: 2430000, net: 14020000, status: 'En proceso' },
+  { id: 'PAY-002', period: 'Cierre abril 2026', base: 15900000, deductions: 2350000, net: 13550000, status: 'Aprobado' },
 ]
 
 export const activity: TimelineEntry[] = [
